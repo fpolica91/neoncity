@@ -26,11 +26,10 @@ export const COLORS = {
   streetLine: { r: 0, g: 0.4, b: 0.35 },
 } as const;
 
-// City grid configuration
 export const GRID = {
   blockSize: 8,
   streetWidth: 3,
-  buildingFootprint: 6,
+  buildingFootprint: 4,
   maxPerRow: 6,
 } as const;
 

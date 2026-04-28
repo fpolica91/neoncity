@@ -43,6 +43,10 @@ export class WsBus {
   /** Broadcast event to all connected clients */
   broadcast(event: BridgeEvent): void {
     const data = JSON.stringify(event);
+    if (event.type === "session:start" || event.type === "session:stop") {
+      const sid = (event.payload as { sessionId?: string }).sessionId;
+      console.log(`[ws.broadcast] ${event.type} sid=${sid?.slice(0, 8)} clients=${this.clients.size}`);
+    }
     for (const client of this.clients) {
       if (client.readyState === WebSocket.OPEN) {
         client.send(data);

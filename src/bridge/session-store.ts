@@ -43,6 +43,10 @@ export class SessionStore {
   }
 
   private emit(event: BridgeEvent): void {
+    if (event.type === "session:start" || event.type === "session:stop") {
+      const sid = (event.payload as { sessionId?: string }).sessionId;
+      console.log(`[store.emit] ${event.type} sid=${sid?.slice(0, 8)} handlers=${this.handlers.length}`);
+    }
     for (const handler of this.handlers) {
       handler(event);
     }
@@ -84,6 +88,34 @@ export class SessionStore {
   }
 
   // --- Session lifecycle ---
+
+  /**
+   * Insert a session entry recovered from disk (no events emitted).
+   * Used by transcript watcher at startup to populate the session list.
+   */
+  recoverSession(
+    sessionId: string,
+    cwd: string,
+    opts: { prompt?: string; startedAt?: number; lastActivityAt?: number } = {},
+  ): void {
+    if (this.sessions.has(sessionId)) return;
+    const projectId = this.getProjectId(cwd);
+    const project = this.ensureProject(projectId, cwd);
+    const session: InternalSession = {
+      id: sessionId,
+      projectId,
+      status: "idle",
+      currentPrompt: opts.prompt,
+      toolCallCount: 0,
+      errorCount: 0,
+      startedAt: opts.startedAt ?? Date.now(),
+      lastActivityAt: opts.lastActivityAt ?? Date.now(),
+      cwd,
+      transcriptPath: "",
+    };
+    this.sessions.set(sessionId, session);
+    project.sessions.set(sessionId, session);
+  }
 
   sessionStart(sessionId: string, cwd: string): void {
     const projectId = this.getProjectId(cwd);
@@ -212,16 +244,24 @@ export class SessionStore {
     });
   }
 
-  sessionStop(sessionId: string): void {
+  sessionStop(sessionId: string, lastMessage?: string): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
-
+    // Idempotent: first stop wins for state transition. Hook server's "Stop"
+    // races proc-close, and without this guard a duplicate empty stop clears
+    // the client mapping before the real reply arrives. We DO still emit a
+    // follow-up stop if it brings a lastMessage the first one lacked.
+    if (session.status === "idle") {
+      if (lastMessage) {
+        this.emit({ type: "session:stop", payload: { sessionId, lastMessage } });
+      }
+      return;
+    }
     session.status = "idle";
     session.lastActivityAt = Date.now();
-
     this.emit({
       type: "session:stop",
-      payload: { sessionId },
+      payload: { sessionId, lastMessage },
     });
   }
 
@@ -343,7 +383,7 @@ export class SessionStore {
 
         this.emit({
           type: "task:completed",
-          payload: { taskId, subject },
+          payload: { taskId, subject, projectId: project.id, },
         });
         return;
       }
@@ -352,7 +392,7 @@ export class SessionStore {
     // Task not found by ID — emit anyway for subjects matched tasks
     this.emit({
       type: "task:completed",
-      payload: { taskId: taskId || "unknown", subject },
+      payload: { taskId: taskId, projectId: "", subject },
     });
   }
 

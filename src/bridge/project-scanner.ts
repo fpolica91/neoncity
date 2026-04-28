@@ -46,8 +46,16 @@ export async function scanProjects(): Promise<Map<string, InternalProject>> {
         agents: new Map(),
       };
 
-      // Only include projects that have had at least one session
-      if (transcriptCount > 0) {
+      // Skip stale entries — the decoded cwd no longer exists on disk
+      let cwdExists = false;
+      try {
+        const cwdStat = await stat(decodedPath);
+        cwdExists = cwdStat.isDirectory();
+      } catch {
+        cwdExists = false;
+      }
+
+      if (transcriptCount > 0 && cwdExists) {
         projects.set(project.id, project);
       }
     }

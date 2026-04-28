@@ -1,9 +1,13 @@
 import { watch } from "node:fs";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { existsSync } from "node:fs";
 import type { SessionStore } from "./session-store.js";
+import { readLastUserMessage } from "./jsonl-parser.js";
+
+const RESUMABLE_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 14; // 14 days
+const PER_PROJECT_LIMIT = 30;
 
 const CLAUDE_DIR = join(homedir(), ".claude");
 const PROJECTS_DIR = join(CLAUDE_DIR, "projects");
@@ -19,7 +23,6 @@ interface TranscriptEntry {
   cwd?: string;
   timestamp?: string;
   uuid?: string;
-  sessionId?: string;
 }
 
 /**
@@ -50,6 +53,7 @@ export class TranscriptWatcher {
   }
 
   private async recoverState(): Promise<void> {
+    const cutoffMs = Date.now() - RESUMABLE_MAX_AGE_MS;
     try {
       const projectDirs = await readdir(PROJECTS_DIR);
 
@@ -58,36 +62,40 @@ export class TranscriptWatcher {
         const statResult = await stat(projectPath);
         if (!statResult.isDirectory()) continue;
 
+        const cwd = "/" + dir.slice(1).replace(/-/g, "/");
+        const projectId = this.store.getProjectId(cwd);
+
         const files = await readdir(projectPath);
-        const jsonlFiles = files
-          .filter((f) => f.endsWith(".jsonl"))
-          .sort()
-          .reverse(); // newest first
-
-        // Only recover last 3 sessions per project
-        let recovered = 0;
-        for (const file of jsonlFiles) {
-          if (recovered >= 3) break;
-
+        const candidates: Array<{ sessionId: string; filePath: string; mtimeMs: number; sizeBytes: number }> = [];
+        for (const file of files) {
+          if (!file.endsWith(".jsonl")) continue;
           const filePath = join(projectPath, file);
-          const sessionId = file.replace(".jsonl", "");
-
           try {
-            const content = await readFile(filePath, "utf-8");
-            const lines = content.split("\n").filter((l) => l.trim());
-            if (lines.length === 0) continue;
-
-            // Parse first line to get cwd
-            const first: TranscriptEntry = JSON.parse(lines[0]);
-            const cwd = first.cwd || "/" + dir.slice(1).replace(/-/g, "/");
-            const projectId = this.store.getProjectId(cwd);
-
-            // Mark this session as known
-            this.knownSessions.set(sessionId, projectId);
-            recovered++;
+            const fst = await stat(filePath);
+            if (fst.mtimeMs < cutoffMs) continue;
+            if (fst.size === 0) continue;
+            candidates.push({
+              sessionId: file.replace(".jsonl", ""),
+              filePath,
+              mtimeMs: fst.mtimeMs,
+              sizeBytes: fst.size,
+            });
           } catch {
-            // Skip malformed files
+            // skip
           }
+        }
+        candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+        const top = candidates.slice(0, PER_PROJECT_LIMIT);
+
+        for (const c of top) {
+          const preview = await readLastUserMessage(c.filePath);
+          if (!preview) continue; // empty / pure-noise sessions
+          this.store.recoverSession(c.sessionId, cwd, {
+            prompt: preview,
+            startedAt: c.mtimeMs - 1000, // approximate; we don't read the start time
+            lastActivityAt: c.mtimeMs,
+          });
+          this.knownSessions.set(c.sessionId, projectId);
         }
       }
 
