@@ -1,7 +1,7 @@
 import { SessionStore } from "./session-store.js";
 import { WsBus } from "./ws-bus.js";
 import { createServer } from "./server.js";
-import { sendPrompt, cancelSession } from "./claude-control.js";
+import { sendPrompt, cancelSession, runOnce } from "./claude-control.js";
 import { TranscriptWatcher } from "./transcript-watcher.js";
 import { Pinboard } from "./pinboard.js";
 import { Mailbox } from "./mailbox.js";
@@ -63,6 +63,14 @@ async function main() {
       }
       case "mail:read_all": {
         mailbox.markAllRead();
+        break;
+      }
+      case "experience:request": {
+        const { requestId, prompt, projectPath } = cmd.payload;
+        console.log(`Experience request ${requestId.slice(0, 12)}… for ${projectPath || "(default cwd)"}`);
+        runOnce(prompt, projectPath, (text) => {
+          bus.broadcast({ type: "experience:result", payload: { requestId, text } });
+        });
         break;
       }
       case "prompt:send": {

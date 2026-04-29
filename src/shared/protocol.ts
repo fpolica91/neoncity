@@ -134,6 +134,7 @@ export type BridgeEvent =
   | { type: "pin:removed"; payload: { id: string } }
   | { type: "mail:added"; payload: MailModel }
   | { type: "mail:read_all"; payload: Record<string, never> }
+  | { type: "experience:result"; payload: { requestId: string; text: string } }
   | { type: "state:full_sync"; payload: FullSyncPayload };
 
 export interface FullSyncPayload {
@@ -155,6 +156,7 @@ export type ClientCommand =
   | { type: "pin:remove"; payload: { id: string } }
   | { type: "mail:send"; payload: { text: string } }
   | { type: "mail:read_all"; payload: Record<string, never> }
+  | { type: "experience:request"; payload: { requestId: string; prompt: string; projectPath: string } }
   | { type: "subscribe" };
 
 // --- Hook event from Claude Code ---

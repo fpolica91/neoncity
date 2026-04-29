@@ -11,6 +11,51 @@ let claudeBin = "claude";
 // Track in-flight subprocesses by sessionId so we can cancel them.
 const activeProcs = new Map<string, ReturnType<typeof spawn>>();
 
+/**
+ * One-shot Claude call: spawns `claude -p <prompt>` in the given cwd and
+ * delivers the final assistant text to `cb`. Bypasses SessionStore — used for
+ * lightweight side-channel things like the agent "experience report" flow.
+ */
+export function runOnce(
+  prompt: string,
+  projectPath: string,
+  cb: (text: string) => void,
+): void {
+  const cwd = projectPath.startsWith("/")
+    ? projectPath
+    : projectPath
+      ? `${homedir()}/${projectPath}`
+      : process.cwd();
+  if (!existsSync(cwd)) {
+    cb(`(project path doesn't exist: ${cwd})`);
+    return;
+  }
+  let output = "";
+  let proc;
+  try {
+    proc = spawn(
+      claudeBin,
+      ["-p", prompt, "--dangerously-skip-permissions"],
+      { cwd, env: { ...process.env }, stdio: ["pipe", "pipe", "pipe"] },
+    );
+  } catch (e) {
+    cb(`(spawn error: ${String(e)})`);
+    return;
+  }
+  proc.on("error", (err) => cb(`(error: ${err.message})`));
+  proc.stdout?.on("data", (chunk: Buffer) => {
+    output += chunk.toString();
+  });
+  proc.stderr?.on("data", (chunk: Buffer) => {
+    console.error(`[runOnce] STDERR: ${chunk.toString().trim()}`);
+  });
+  proc.on("close", (code) => {
+    const text = output.trim();
+    cb(text || `(claude exited with code ${code})`);
+  });
+  proc.stdin?.end();
+}
+
 export function cancelSession(sessionId: string): boolean {
   const proc = activeProcs.get(sessionId);
   if (!proc) return false;

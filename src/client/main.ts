@@ -93,6 +93,9 @@ ground.rotation.x = -Math.PI / 2;
 scene.add(ground);
 
 // ---- City backdrop ----
+interface BuildingInfo { x: number; z: number; w: number; d: number; h: number; rotY: number }
+const cityBuildings: BuildingInfo[] = [];
+
 function createCity(): THREE.Mesh {
   const geometry = new THREE.BoxGeometry(1, 1, 1);
   geometry.applyMatrix(new THREE.Matrix4().makeTranslation(0, 0.5, 0));
@@ -115,6 +118,11 @@ function createCity(): THREE.Mesh {
       Math.random() * Math.random() * Math.random() * buildingMesh.scale.x * 8 +
       8;
     buildingMesh.scale.z = buildingMesh.scale.x;
+    cityBuildings.push({
+      x: px, z: pz,
+      w: buildingMesh.scale.x, d: buildingMesh.scale.z, h: buildingMesh.scale.y,
+      rotY: buildingMesh.rotation.y,
+    });
     const value = 1 - Math.random() * Math.random();
     const baseColor = new THREE.Color().setRGB(
       value + Math.random() * 0.1,
@@ -508,6 +516,606 @@ function buildRoads() {
 }
 buildRoads();
 
+// ---- Sidewalks (lighter strips just inside the road) ----
+function buildSidewalks() {
+  const swMat = new THREE.MeshLambertMaterial({ color: 0x444958 });
+  const SW_W = 1.6;
+  const inset = ROAD_W / 2 + SW_W / 2;
+  const innerL = ROAD_L - inset;
+  // Bottom + top
+  for (const z of [-innerL, innerL]) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(2 * innerL + SW_W, SW_W), swMat);
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(0, 0.005, z);
+    scene.add(m);
+  }
+  // Left + right
+  for (const x of [-innerL, innerL]) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(SW_W, 2 * innerL + SW_W), swMat);
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(x, 0.005, 0);
+    scene.add(m);
+  }
+}
+buildSidewalks();
+const SIDEWALK_L = ROAD_L - (ROAD_W / 2 + 1.6 / 2); // path centerline for pedestrians
+
+// ---- Trees (around the inner edge of the sidewalk) ----
+function makeTree(x: number, z: number) {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.22, 1.6, 8),
+    new THREE.MeshLambertMaterial({ color: 0x4a2f1a }),
+  );
+  trunk.position.y = 0.8;
+  g.add(trunk);
+  const foliage = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.95, 1),
+    new THREE.MeshLambertMaterial({ color: 0x2f6b3a + Math.floor(Math.random() * 0x101010) }),
+  );
+  foliage.position.y = 2.0;
+  foliage.scale.setScalar(0.85 + Math.random() * 0.4);
+  g.add(foliage);
+  g.position.set(x, 0, z);
+  g.rotation.y = Math.random() * Math.PI;
+  scene.add(g);
+}
+// Plant trees along each sidewalk inner edge, skipping near the kiosk corner
+const treeInsetL = SIDEWALK_L - 1.4;
+for (let i = -2; i <= 2; i++) {
+  if (i !== 0) {
+    makeTree(i * 11, -treeInsetL);
+    makeTree(i * 11, treeInsetL);
+    makeTree(-treeInsetL, i * 11);
+    makeTree(treeInsetL, i * 11);
+  }
+}
+
+// ---- Benches (along sidewalks, facing the plaza) ----
+function makeBench(x: number, z: number, faceYaw: number) {
+  const g = new THREE.Group();
+  const woodMat = new THREE.MeshLambertMaterial({ color: 0x5c3a1e });
+  const metalMat = new THREE.MeshLambertMaterial({ color: 0x16181f });
+  // Seat
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.08, 0.45), woodMat);
+  seat.position.y = 0.45;
+  g.add(seat);
+  // Backrest
+  const back = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.5, 0.07), woodMat);
+  back.position.set(0, 0.7, -0.2);
+  g.add(back);
+  // Legs
+  for (const dx of [-0.7, 0.7]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.45, 0.4), metalMat);
+    leg.position.set(dx, 0.225, 0);
+    g.add(leg);
+  }
+  g.position.set(x, 0, z);
+  g.rotation.y = faceYaw;
+  scene.add(g);
+}
+makeBench(-9, -SIDEWALK_L, 0);
+makeBench(9, -SIDEWALK_L, 0);
+makeBench(-9, SIDEWALK_L, Math.PI);
+makeBench(9, SIDEWALK_L, Math.PI);
+makeBench(-SIDEWALK_L, -9, Math.PI / 2);
+makeBench(-SIDEWALK_L, 9, Math.PI / 2);
+makeBench(SIDEWALK_L, -9, -Math.PI / 2);
+makeBench(SIDEWALK_L, 9, -Math.PI / 2);
+
+// ---- Coffee kiosk (in the SE inner corner) ----
+function buildKiosk() {
+  const g = new THREE.Group();
+  const W = 3, H = 2.4, D = 2.2;
+  const wallMat = new THREE.MeshLambertMaterial({ color: 0x2a2d3a });
+  const counterMat = new THREE.MeshLambertMaterial({ color: 0x6b4a2e });
+  const roofMat = new THREE.MeshLambertMaterial({ color: 0xc5374a });
+  // Floor + back
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(W, 0.1, D), counterMat);
+  floor.position.y = 0.05;
+  g.add(floor);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.15), wallMat);
+  back.position.set(0, H / 2, -D / 2);
+  g.add(back);
+  // Side walls
+  for (const dx of [-W / 2, W / 2]) {
+    const sw = new THREE.Mesh(new THREE.BoxGeometry(0.15, H, D), wallMat);
+    sw.position.set(dx, H / 2, 0);
+    g.add(sw);
+  }
+  // Counter (front, partial-height)
+  const counter = new THREE.Mesh(new THREE.BoxGeometry(W, 1.0, 0.4), counterMat);
+  counter.position.set(0, 0.5, D / 2 - 0.2);
+  g.add(counter);
+  // Roof with overhang
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(W + 0.6, 0.18, D + 0.8), roofMat);
+  roof.position.set(0, H + 0.1, 0.15);
+  g.add(roof);
+  // Awning support post
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, H, 8), wallMat);
+  post.position.set(0, H / 2, D / 2 + 0.3);
+  g.add(post);
+  // Glowing "COFFEE" sign
+  const signCanvas = document.createElement("canvas");
+  signCanvas.width = 384; signCanvas.height = 96;
+  const ctx = signCanvas.getContext("2d")!;
+  ctx.font = "bold 56px monospace";
+  ctx.fillStyle = "#ffe4a0";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.shadowColor = "#ff9c44";
+  ctx.shadowBlur = 24;
+  ctx.fillText("☕ COFFEE", 192, 48);
+  const signTex = new THREE.Texture(signCanvas);
+  signTex.needsUpdate = true;
+  const sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTex, transparent: true }));
+  sign.scale.set(3, 0.75, 1);
+  sign.position.set(0, H + 0.7, D / 2 + 0.4);
+  g.add(sign);
+  // Warm interior light (only on at night)
+  const kioskLight = new THREE.PointLight(0xffd28a, 0.8, 6, 2);
+  kioskLight.position.set(0, H * 0.7, 0);
+  g.add(kioskLight);
+  // Place in the SE-inside corner of the road
+  g.position.set(28, 0, 28);
+  g.rotation.y = -Math.PI * 0.75;
+  scene.add(g);
+}
+buildKiosk();
+
+// ---- Nightlife establishments ----
+interface Establishment {
+  name: string;
+  doorPosition: THREE.Vector3; // where visiting agents stand
+  ambientLights: THREE.PointLight[];
+  signMat: THREE.SpriteMaterial;
+  pulseColors?: number[]; // for rotating dance lights
+}
+const establishments: Record<string, Establishment> = {};
+
+function buildClub(opts: {
+  name: string;
+  pos: [number, number];
+  facingYaw: number; // direction front faces (radians); door is on +z local
+  shellColor: number;
+  signColor: string;
+  signGlow: string;
+  primaryLight: number;
+  pulseColors?: number[];
+}): Establishment {
+  const g = new THREE.Group();
+  g.position.set(opts.pos[0], 0, opts.pos[1]);
+  g.rotation.y = opts.facingYaw;
+  scene.add(g);
+
+  const W = 5, H = 3.4, D = 4.2;
+  const wallMat = new THREE.MeshLambertMaterial({ color: opts.shellColor });
+  // Floor
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(W, 0.1, D), wallMat);
+  floor.position.y = 0.05;
+  g.add(floor);
+  // Back wall
+  const back = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.2), wallMat);
+  back.position.set(0, H / 2, -D / 2);
+  g.add(back);
+  // Side walls
+  for (const dx of [-W / 2, W / 2]) {
+    const sw = new THREE.Mesh(new THREE.BoxGeometry(0.2, H, D), wallMat);
+    sw.position.set(dx, H / 2, 0);
+    g.add(sw);
+  }
+  // Front wall (with cutout for door)
+  // Two narrow strips left + right of where the door is
+  const doorWidth = 1.6;
+  const sideWidth = (W - doorWidth) / 2;
+  for (const dxSign of [-1, 1]) {
+    const fw = new THREE.Mesh(new THREE.BoxGeometry(sideWidth, H, 0.2), wallMat);
+    fw.position.set(dxSign * (doorWidth / 2 + sideWidth / 2), H / 2, D / 2);
+    g.add(fw);
+  }
+  // Lintel above door
+  const lintel = new THREE.Mesh(new THREE.BoxGeometry(doorWidth + 0.2, H - 2.2, 0.2), wallMat);
+  lintel.position.set(0, H - (H - 2.2) / 2, D / 2);
+  g.add(lintel);
+  // Roof
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(W + 0.4, 0.18, D + 0.4), new THREE.MeshLambertMaterial({ color: 0x16181f }));
+  roof.position.set(0, H + 0.1, 0);
+  g.add(roof);
+
+  // Neon sign on front
+  const signCanvas = document.createElement("canvas");
+  signCanvas.width = 512; signCanvas.height = 128;
+  {
+    const ctx = signCanvas.getContext("2d")!;
+    ctx.font = "bold 64px monospace";
+    ctx.fillStyle = opts.signColor;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = opts.signGlow;
+    ctx.shadowBlur = 28;
+    ctx.fillText(opts.name, 256, 64);
+  }
+  const signTex = new THREE.Texture(signCanvas);
+  signTex.needsUpdate = true;
+  const signMat = new THREE.SpriteMaterial({ map: signTex, transparent: true });
+  const sign = new THREE.Sprite(signMat);
+  sign.scale.set(4.5, 1.1, 1);
+  sign.position.set(0, H + 0.85, D / 2 + 0.4);
+  g.add(sign);
+
+  // Door indicator (glowing edge frame)
+  const doorFrame = new THREE.Mesh(
+    new THREE.BoxGeometry(doorWidth + 0.05, 2.2, 0.04),
+    new THREE.MeshBasicMaterial({ color: opts.primaryLight }),
+  );
+  doorFrame.position.set(0, 1.1, D / 2 + 0.06);
+  g.add(doorFrame);
+
+  // Two ambient lights (one outside the entrance, one inside)
+  const outerLight = new THREE.PointLight(opts.primaryLight, 1.6, 8, 2);
+  outerLight.position.set(0, 2.5, D / 2 + 1.2);
+  g.add(outerLight);
+  const innerLight = new THREE.PointLight(opts.primaryLight, 1.0, 6, 2);
+  innerLight.position.set(0, H * 0.6, 0);
+  g.add(innerLight);
+
+  // Door position in WORLD coords: front of building (center of +z face) + 1.5 offset out
+  const offsetLocal = new THREE.Vector3(0, 0, D / 2 + 1.4);
+  offsetLocal.applyAxisAngle(new THREE.Vector3(0, 1, 0), opts.facingYaw);
+  const doorPos = new THREE.Vector3(opts.pos[0] + offsetLocal.x, 0, opts.pos[1] + offsetLocal.z);
+
+  return {
+    name: opts.name,
+    doorPosition: doorPos,
+    ambientLights: [outerLight, innerLight],
+    signMat,
+    pulseColors: opts.pulseColors,
+  };
+}
+
+establishments.LOUNGE = buildClub({
+  name: "MIDNIGHT LOUNGE",
+  pos: [-28, 28],
+  facingYaw: -Math.PI * 0.25,
+  shellColor: 0x261218,
+  signColor: "#ff5fa8",
+  signGlow: "#ff5fa8",
+  primaryLight: 0xff5fa8,
+});
+
+establishments.PULSE = buildClub({
+  name: "♪ PULSE",
+  pos: [-28, -28],
+  facingYaw: Math.PI * 0.25,
+  shellColor: 0x121626,
+  signColor: "#88e6ff",
+  signGlow: "#88e6ff",
+  primaryLight: 0x88e6ff,
+  pulseColors: [0x88e6ff, 0xff5fa8, 0xa6e088, 0xfff0c8, 0xc8b0ff],
+});
+
+establishments.VELVET = buildClub({
+  name: "💋 VELVET",
+  pos: [28, -28],
+  facingYaw: Math.PI * 0.75,
+  shellColor: 0x2a0a18,
+  signColor: "#ff2d8a",
+  signGlow: "#ff2d8a",
+  primaryLight: 0xff2d8a,
+});
+
+// Dance lights for PULSE — cycle through colors
+let pulseColorPhase = 0;
+function updateClubLights(t: number) {
+  // PULSE rotates through colors quickly
+  const pulseEst = establishments.PULSE;
+  if (pulseEst.pulseColors && pulseEst.pulseColors.length > 0) {
+    pulseColorPhase = (pulseColorPhase + 0.08) % pulseEst.pulseColors.length;
+    const idx = Math.floor(pulseColorPhase);
+    const next = (idx + 1) % pulseEst.pulseColors.length;
+    const frac = pulseColorPhase - idx;
+    const a = new THREE.Color(pulseEst.pulseColors[idx]);
+    const b = new THREE.Color(pulseEst.pulseColors[next]);
+    const r = a.r + (b.r - a.r) * frac;
+    const gC = a.g + (b.g - a.g) * frac;
+    const bl = a.b + (b.b - a.b) * frac;
+    for (const l of pulseEst.ambientLights) l.color.setRGB(r, gC, bl);
+  }
+  // LOUNGE pulses red intensity
+  const loungeEst = establishments.LOUNGE;
+  const lp = 1.0 + Math.sin(t * 2.5) * 0.3;
+  for (const l of loungeEst.ambientLights) l.intensity = (l === loungeEst.ambientLights[0] ? 1.6 : 1.0) * lp;
+}
+
+// ---- Lurers (NPCs outside VELVET who try to drag agents in) ----
+interface Lurer {
+  group: THREE.Group;
+  bubble: SayBubble;
+  homePos: THREE.Vector3;
+  nextFlirtAt: number;
+  nextLureAt: number;
+}
+const lurers: Lurer[] = [];
+
+const FLIRT_LINES = ["*winks*", "💋", "*hair flip*", "...hi", "*poses*", "🥂"];
+const LURE_LINES = [
+  "hey baby ;)", "psst — over here", "first drink's free",
+  "VIP just for you", "got 5 minutes?", "you look stressed",
+  "live music 🎶", "no cover for you", "we'll take care of you",
+  "💋 inside",
+];
+const AGENT_YIELD = ["...one drink", "ok fine", "well…", "*shrugs*", "alright", "i guess"];
+const AGENT_DEMUR = ["...maybe later", "no thanks", "*walks faster*", "i'm working", "another time"];
+
+function makeLurer(x: number, z: number, outfitColor: number, hairColor: number): Lurer {
+  const g = new THREE.Group();
+  const skinMat = new THREE.MeshLambertMaterial({ color: 0xeac6a3 });
+  const outfitMat = new THREE.MeshLambertMaterial({ color: outfitColor });
+  const heelMat = new THREE.MeshLambertMaterial({ color: 0x101010 });
+  const hairMat = new THREE.MeshLambertMaterial({ color: hairColor });
+
+  // Long legs (with heels — stand a bit taller than other humanoids)
+  const legGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.85, 8);
+  legGeo.translate(0, -0.425, 0);
+  for (const dx of [-0.13, 0.13]) {
+    const leg = new THREE.Mesh(legGeo, skinMat);
+    leg.position.set(dx, 1.05, 0);
+    g.add(leg);
+    const heel = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.16, 0.24), heelMat);
+    heel.position.set(dx, 0.1, 0.05);
+    g.add(heel);
+  }
+  // Hot shorts
+  const shorts = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.25, 0.32), outfitMat);
+  shorts.position.y = 1.18;
+  g.add(shorts);
+  // Tight halter top
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.3), outfitMat);
+  torso.position.y = 1.6;
+  g.add(torso);
+  // Head + hair
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), skinMat);
+  head.position.y = 2.07;
+  g.add(head);
+  const hair = new THREE.Mesh(
+    new THREE.SphereGeometry(0.24, 12, 10, 0, Math.PI * 2, 0, Math.PI / 1.6),
+    hairMat,
+  );
+  hair.position.y = 2.07;
+  g.add(hair);
+  // Arms — one on hip, one slightly out (waving down at the side)
+  const armGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.6, 8);
+  armGeo.translate(0, -0.3, 0);
+  const leftArm = new THREE.Mesh(armGeo, skinMat);
+  leftArm.position.set(-0.32, 1.9, 0);
+  leftArm.rotation.z = -0.7; // hand on hip
+  g.add(leftArm);
+  const rightArm = new THREE.Mesh(armGeo.clone(), skinMat);
+  rightArm.position.set(0.32, 1.9, 0);
+  rightArm.rotation.z = 0.4;
+  g.add(rightArm);
+  // Slight body sway (visual interest)
+  g.rotation.z = (Math.random() - 0.5) * 0.05;
+  g.position.set(x, 0, z);
+
+  scene.add(g);
+  const bubble = attachSayBubble(g, 2.85, 2.0);
+  return {
+    group: g,
+    bubble,
+    homePos: new THREE.Vector3(x, 0, z),
+    nextFlirtAt: performance.now() + Math.random() * 6000,
+    nextLureAt: performance.now() + Math.random() * 4000,
+  };
+}
+
+function spawnLurers() {
+  const vDoor = establishments.VELVET.doorPosition;
+  // Tangent direction (perpendicular to velvet facing) so we offset to either side of the door
+  const vYaw = Math.PI * 0.75;
+  const tangent = vYaw + Math.PI / 2;
+  const tx = Math.cos(tangent), tz = Math.sin(tangent);
+  // Face the plaza (look toward origin from door)
+  const lookYaw = Math.atan2(-vDoor.x, -vDoor.z);
+
+  const left = makeLurer(vDoor.x + tx * 1.6, vDoor.z + tz * 1.6, 0xff5fa8, 0x1a0e10);
+  left.group.rotation.y = lookYaw + 0.15;
+  lurers.push(left);
+  const right = makeLurer(vDoor.x - tx * 1.6, vDoor.z - tz * 1.6, 0x9a2dff, 0xeac08a);
+  right.group.rotation.y = lookYaw - 0.15;
+  lurers.push(right);
+}
+spawnLurers();
+
+function updateLurers(t: number) {
+  const now = performance.now();
+  for (const l of lurers) {
+    l.bubble.update(now);
+    // Subtle sway
+    l.group.position.y = Math.sin(t * 1.5 + l.homePos.x) * 0.03;
+    // Idle flirt
+    if (now > l.nextFlirtAt) {
+      if (Math.random() < 0.45) l.bubble.say(pickRand(FLIRT_LINES));
+      l.nextFlirtAt = now + 5000 + Math.random() * 9000;
+    }
+    // Lure attempts (rate-limited)
+    if (now < l.nextLureAt) continue;
+    l.nextLureAt = now + 2500 + Math.random() * 1500;
+    let candidate: Agent | null = null;
+    let bestDist = 7.0;
+    for (const a of agents) {
+      if (a.state !== "wandering") continue;
+      const dx = l.homePos.x - a.group.position.x;
+      const dz = l.homePos.z - a.group.position.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < bestDist) {
+        bestDist = dist;
+        candidate = a;
+      }
+    }
+    if (!candidate) continue;
+    // Throw out a line, then with 55% chance hook the agent
+    l.bubble.say(pickRand(LURE_LINES), 3000);
+    const a = candidate;
+    setTimeout(() => {
+      if (a.state !== "wandering") return;
+      if (Math.random() < 0.55) {
+        a.bubble?.say(pickRand(AGENT_YIELD), 2400);
+        setTimeout(() => {
+          if (a.state === "wandering") sendAgentToEstablishment(a, establishments.VELVET);
+        }, 1400);
+      } else {
+        a.bubble?.say(pickRand(AGENT_DEMUR), 2200);
+      }
+    }, 900);
+  }
+}
+
+// ---- Experience report (LLM-generated) ----
+const ESTABLISHMENT_DESCRIPTIONS: Record<string, string> = {
+  "💋 VELVET": "a high-end strip club in a neon-lit cyberpunk plaza. Pink and red neon, bass-heavy music, dancers with stage names like RUBY, CINDER, and SCARLET, expensive champagne. The bouncer is named MARC and takes his job very seriously. Tipping etiquette is fiercely enforced.",
+  "♪ PULSE": "a packed dance club. Cyan and magenta strobes, a DJ who lives for the drop, a sweaty crowd. The drinks are overpriced and the bass rearranges your organs.",
+  "MIDNIGHT LOUNGE": "a dim cocktail lounge with leather booths and a saxophone player on weekends. The bartender is GUS, who makes a perfect manhattan and judges everything you order. Quiet enough to talk, loud enough to feel alive.",
+};
+
+const VENUE_EVENTS: Record<string, string[]> = {
+  "💋 VELVET": [
+    "got into a tipping argument with a dancer named RUBY who was politely insistent",
+    "spent way more than intended on overpriced champagne",
+    "ran into another agent in there and pretended not to see them",
+    "MARC the bouncer asked for ID twice and gave a long look",
+    "a dancer remembered your face from last time (you've been there once)",
+    "knocked into a stripper pole during a clumsy maneuver",
+    "the music was so loud the bartender had to read your lips",
+    "got a free shot for reasons that were not fully explained",
+    "tipped the DJ to play a specific song; he did not",
+  ],
+  "♪ PULSE": [
+    "the DJ dropped a remix of a 2003 banger that had no business being there",
+    "danced for forty minutes straight without realizing time had passed",
+    "made eye contact with someone across the floor and did not look away",
+    "spilled half a drink during the bass drop",
+    "got pulled into a stranger's birthday circle",
+    "the bass was loud enough to feel in your sternum",
+    "a guy named EDDIE bought you a shot and then disappeared",
+  ],
+  "MIDNIGHT LOUNGE": [
+    "had a long conversation with a stranger about their ex-wife",
+    "the saxophonist played 'Caravan' twice and you didn't mind",
+    "ordered a manhattan and received an approving silent nod from GUS",
+    "scribbled three poems on a cocktail napkin you'll never read again",
+    "felt briefly like a 1940s detective for no good reason",
+    "sat at the bar for ten minutes saying nothing, just listening",
+    "tipped GUS heavily because of the eyebrow he raised at your order",
+  ],
+};
+
+function buildExperiencePrompt(a: Agent, estName: string): string {
+  const events = VENUE_EVENTS[estName] || ["had a good time"];
+  const e1 = events[Math.floor(Math.random() * events.length)];
+  let e2 = events[Math.floor(Math.random() * events.length)];
+  while (e2 === e1 && events.length > 1) {
+    e2 = events[Math.floor(Math.random() * events.length)];
+  }
+  const venue = ESTABLISHMENT_DESCRIPTIONS[estName] || "a bar";
+  return `You are ${a.name}, an AI agent (your role is "${a.role}") who lives in a small neon cyberpunk plaza alongside other agents named ARIA, KAI, RUNE, LYNX, and ECHO. You just spent about 15 minutes off-duty at ${estName} — ${venue}
+
+Two things that happened tonight:
+- ${e1}
+- ${e2}
+
+You're now walking back to your spot in the plaza to rejoin the group. In ONE casual sentence (max 22 words), tell the group what your night was like. Be a little bit funny if it fits. No quotes around the line, no "as an AI", just the sentence.`;
+}
+
+// requestId → which agent and which venue we're waiting on
+const experiencePending = new Map<string, { agent: Agent; estName: string }>();
+
+function requestExperienceReport(a: Agent, estName: string) {
+  if (!bridgeConnected || !ws) {
+    // No bridge — fall back to static
+    const r = pickReport(estName);
+    a.bubble?.say(r.length > 16 ? r.slice(0, 14) + "…" : r, 4500);
+    appendMessage(a.name, `(back from ${estName}) ${r}`, true, a.color);
+    return;
+  }
+  const requestId = `exp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  experiencePending.set(requestId, { agent: a, estName });
+  const prompt = buildExperiencePrompt(a, estName);
+  const projectPath = projectPicker.value || "";
+  ws.send(JSON.stringify({ type: "experience:request", payload: { requestId, prompt, projectPath } }));
+  a.bubble?.say("hmm…", 3500);
+  // Safety net: if we never hear back in 90s, drop a static one
+  setTimeout(() => {
+    if (!experiencePending.has(requestId)) return;
+    experiencePending.delete(requestId);
+    const r = pickReport(estName);
+    a.bubble?.say(r.length > 16 ? r.slice(0, 14) + "…" : r, 4500);
+    appendMessage(a.name, `(back from ${estName}, fallback) ${r}`, true, a.color);
+  }, 90_000);
+}
+
+const VISIT_REPORTS: Record<string, string[]> = {
+  "💋 VELVET": [
+    "got a lap dance from RUBY",
+    "lost $80 in there but worth every cent",
+    "the bouncer threw me out for tipping wrong",
+    "i think i'm in love with someone named CINDER",
+    "tipped my whole paycheck. don't tell ECHO.",
+    "RUBY says hi 💋",
+    "i need a long shower",
+    "💸💸💸 worth it",
+    "pulled a hammy doing the splits",
+    "they know my name now... is that bad?",
+    "*sweating profusely*",
+    "free shots if you sign up for the loyalty card",
+    "saw KAI in there. acted like i didn't.",
+    "spent rent money. i regret nothing.",
+  ],
+  "MIDNIGHT LOUNGE": [
+    "had a manhattan. very clarifying.",
+    "the saxophone guy was unreal",
+    "met a stranger at the bar, exchanged glances, that was it",
+    "the lighting in there is photogenic",
+    "drank a martini and pretended to be a spy",
+    "ordered an old fashioned, felt 60",
+    "got hit on by a guy named WALTER",
+    "wrote three poems on a cocktail napkin",
+    "the pianist played our song",
+    "tipped well. felt rich.",
+    "negronied myself into clarity",
+  ],
+  "♪ PULSE": [
+    "ears are still ringing",
+    "💃 i lost myself in there",
+    "the DJ played that one song. you know the one.",
+    "jumped until my legs gave out",
+    "the bass massaged my organs",
+    "got a number. lost it. probably for the best.",
+    "danced with a stranger for 40 minutes straight",
+    "shirt is soaked. don't ask.",
+    "i think i levitated for a moment",
+    "saw god at the drop",
+    "they were playing my whole 2019 in one set",
+    "made eye contact with someone across the floor and now we're married",
+  ],
+};
+
+function pickReport(estName: string): string {
+  const pool = VISIT_REPORTS[estName] || ["had a good time"];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function sendAgentToEstablishment(a: Agent, est: Establishment) {
+  if (a.state === "working") return;
+  a.state = "decompressing";
+  a.decompressTarget = est.doorPosition.clone();
+  a.decompressArrivedAt = 0;
+  a.decompressUntil = 0;
+  a.decompressEstName = est.name;
+  setStatus(a, `→ ${est.name.split(" ")[0]}`, "tool");
+  selectAgent(a);
+}
+
 // ---- Cars ----
 interface Car {
   group: THREE.Group;
@@ -579,13 +1187,182 @@ function createCar(bodyColor: number): Car {
   return { group: g, t: 0, speed: 0, wheels, headLight };
 }
 
-const carColors = [0xeeeae0, 0x12141a, 0xc5374a, 0x2a8ad7, 0xf0c33b, 0xe7559b];
+const carColors = [0xeeeae0, 0x12141a, 0xc5374a, 0x2a8ad7, 0xf0c33b, 0xe7559b, 0x44ddaa, 0xff6633, 0x8866ff];
 const cars: Car[] = [];
-for (let i = 0; i < 5; i++) {
+const NUM_CARS = 12;
+for (let i = 0; i < NUM_CARS; i++) {
   const c = createCar(carColors[i % carColors.length]);
-  c.t = i / 5;
-  c.speed = 0.018 + Math.random() * 0.012; // perimeter fraction per second
+  c.t = i / NUM_CARS;
+  c.speed = 0.012 + Math.random() * 0.014;
   cars.push(c);
+}
+
+// ---- Pedestrians (background humanoids on sidewalks) ----
+interface Pedestrian {
+  group: THREE.Group;
+  t: number;
+  speed: number; // perimeter fractions/s, sign = direction
+  leftLeg: THREE.Mesh;
+  rightLeg: THREE.Mesh;
+  pauseUntil: number;
+}
+
+function pedLoopPos(t: number): { x: number; z: number; dirX: number; dirZ: number } {
+  const L = SIDEWALK_L;
+  const u = (t % 1 + 1) % 1;
+  const seg = Math.min(3, Math.floor(u * 4));
+  const local = u * 4 - seg;
+  switch (seg) {
+    case 0: return { x: -L + local * 2 * L, z: -L, dirX: 1, dirZ: 0 };
+    case 1: return { x: L, z: -L + local * 2 * L, dirX: 0, dirZ: 1 };
+    case 2: return { x: L - local * 2 * L, z: L, dirX: -1, dirZ: 0 };
+    default: return { x: -L, z: L - local * 2 * L, dirX: 0, dirZ: -1 };
+  }
+}
+
+const PED_PALETTE = [0x4a3a4a, 0x3a4a5a, 0x5a4a3a, 0x4a5a4a, 0x3a3a3a, 0x6b4a3a, 0x4a3a3a, 0x4a4a6a, 0x6b3a55, 0x355a6a];
+const PED_SKIN = [0xc89a6f, 0xa37454, 0xe6c290, 0x8a5a3e, 0xd9aa82];
+
+function createPedestrian(): Pedestrian {
+  const g = new THREE.Group();
+  const shirtCol = PED_PALETTE[Math.floor(Math.random() * PED_PALETTE.length)];
+  const skinCol = PED_SKIN[Math.floor(Math.random() * PED_SKIN.length)];
+  const shirtMat = new THREE.MeshLambertMaterial({ color: shirtCol });
+  const skinMat = new THREE.MeshLambertMaterial({ color: skinCol });
+  const pantsMat = new THREE.MeshLambertMaterial({ color: 0x1a1a24 });
+  // Torso
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.65, 0.32), shirtMat);
+  torso.position.y = 1.05;
+  g.add(torso);
+  // Head
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), skinMat);
+  head.position.y = 1.55;
+  g.add(head);
+  // Legs (pivot at hip for swing)
+  const legGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.75, 6);
+  legGeo.translate(0, -0.375, 0);
+  const leftLeg = new THREE.Mesh(legGeo, pantsMat);
+  leftLeg.position.set(-0.14, 0.74, 0);
+  g.add(leftLeg);
+  const rightLeg = new THREE.Mesh(legGeo.clone(), pantsMat);
+  rightLeg.position.set(0.14, 0.74, 0);
+  g.add(rightLeg);
+  scene.add(g);
+  return { group: g, t: 0, speed: 0.01, leftLeg, rightLeg, pauseUntil: 0 };
+}
+
+const pedestrians: Pedestrian[] = [];
+const NUM_PEDS = 18;
+for (let i = 0; i < NUM_PEDS; i++) {
+  const p = createPedestrian();
+  p.t = i / NUM_PEDS + (Math.random() - 0.5) * (1 / NUM_PEDS);
+  const direction = Math.random() > 0.5 ? 1 : -1;
+  p.speed = (0.006 + Math.random() * 0.007) * direction;
+  pedestrians.push(p);
+}
+
+// ---- Distant window flicker (apartment lights in the city ring) ----
+interface FlickerWindow {
+  sprite: THREE.Sprite;
+  isOn: boolean;
+  nextToggleAt: number;
+}
+const flickerWindows: FlickerWindow[] = [];
+{
+  // Tiny shared white canvas; each sprite tints it with material.color
+  const c = document.createElement("canvas");
+  c.width = 8; c.height = 8;
+  const ctx = c.getContext("2d")!;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, 8, 8);
+  const baseTex = new THREE.Texture(c);
+  baseTex.needsUpdate = true;
+  const colors = [0xffd28a, 0xfff0c8, 0xffc266, 0x88c8ff, 0xa9d6ff, 0xc8b0ff, 0xff9c44, 0xfff8d8];
+  // Filter buildings to those in the visible ring around the plaza
+  const candidates = cityBuildings.filter((b) => {
+    const r = Math.hypot(b.x, b.z);
+    return r >= 80 && r <= 220 && b.h >= 6;
+  });
+  const NUM = Math.min(380, candidates.length * 3);
+  for (let i = 0; i < NUM; i++) {
+    const b = candidates[Math.floor(Math.random() * candidates.length)];
+    // Pick one of the four faces
+    const faceIdx = Math.floor(Math.random() * 4);
+    // Local face normal (before building rotation)
+    const localNormals: Array<[number, number]> = [[0, 1], [1, 0], [0, -1], [-1, 0]];
+    const [lnx, lnz] = localNormals[faceIdx];
+    // Tangent (perpendicular, along the face)
+    const ltx = -lnz, ltz = lnx;
+    // Rotate by building's rotation.y
+    const c = Math.cos(b.rotY), si = Math.sin(b.rotY);
+    const nx = lnx * c - lnz * si;
+    const nz = lnx * si + lnz * c;
+    const tx = ltx * c - ltz * si;
+    const tz = ltx * si + ltz * c;
+    // Half-extent along the chosen face's normal direction
+    const halfNormal = (faceIdx === 0 || faceIdx === 2) ? b.d / 2 : b.w / 2;
+    const halfTangent = (faceIdx === 0 || faceIdx === 2) ? b.w / 2 : b.d / 2;
+    const acrossOffset = (Math.random() - 0.5) * 1.7 * halfTangent;
+    const heightFrac = 0.08 + Math.random() * 0.85;
+    const x = b.x + nx * (halfNormal + 0.08) + tx * acrossOffset;
+    const z = b.z + nz * (halfNormal + 0.08) + tz * acrossOffset;
+    const y = b.h * heightFrac;
+    const tint = colors[Math.floor(Math.random() * colors.length)];
+    const mat = new THREE.SpriteMaterial({ map: baseTex, color: tint, transparent: true });
+    const s = new THREE.Sprite(mat);
+    s.scale.setScalar(0.55 + Math.random() * 0.5);
+    s.position.set(x, y, z);
+    s.visible = false;
+    scene.add(s);
+    flickerWindows.push({
+      sprite: s,
+      isOn: Math.random() > 0.35,
+      nextToggleAt: performance.now() + Math.random() * 10000,
+    });
+  }
+}
+
+let lastFlickerScanAt = 0;
+function updateFlickerWindows(nowMs: number) {
+  if (nowMs - lastFlickerScanAt < 250) return; // 4Hz is plenty
+  lastFlickerScanAt = nowMs;
+  // Recompute nightFactor from current sky color
+  const sky = scene.background as THREE.Color;
+  const skyBrightness = (sky.r + sky.g + sky.b) / 3;
+  const nightFactor = Math.max(0, Math.min(1, 1 - skyBrightness * 1.7));
+  const showThreshold = nightFactor > 0.25;
+  for (const fw of flickerWindows) {
+    if (nowMs > fw.nextToggleAt) {
+      fw.isOn = Math.random() > 0.35; // 65% chance of being lit at any moment
+      fw.nextToggleAt = nowMs + 2000 + Math.random() * 14000;
+    }
+    fw.sprite.visible = showThreshold && fw.isOn;
+  }
+}
+
+function updatePedestrians(dt: number, t: number) {
+  const now = performance.now();
+  for (const p of pedestrians) {
+    if (now < p.pauseUntil) {
+      // idle stand: zero leg swing
+      p.leftLeg.rotation.x = 0;
+      p.rightLeg.rotation.x = 0;
+      continue;
+    }
+    p.t = (p.t + p.speed * dt + 1) % 1;
+    const pos = pedLoopPos(p.t);
+    p.group.position.x = pos.x;
+    p.group.position.z = pos.z;
+    const sign = p.speed >= 0 ? 1 : -1;
+    p.group.rotation.y = Math.atan2(pos.dirX * sign, pos.dirZ * sign);
+    const swing = Math.sin(t * 7 + p.t * 30) * 0.55;
+    p.leftLeg.rotation.x = swing;
+    p.rightLeg.rotation.x = -swing;
+    // Random pause (low probability per frame)
+    if (Math.random() < 0.0008) {
+      p.pauseUntil = now + 1500 + Math.random() * 3500;
+    }
+  }
 }
 
 // Now that cars exist, kick off the day/night cycle
@@ -1287,7 +2064,7 @@ function makeNameSprite(text: string): THREE.Sprite {
   return s;
 }
 
-type AgentState = "wandering" | "working" | "moving";
+type AgentState = "wandering" | "working" | "moving" | "decompressing";
 
 interface Agent {
   group: THREE.Group;
@@ -1295,6 +2072,10 @@ interface Agent {
   desk: THREE.Vector3;
   state: AgentState;
   target: THREE.Vector3 | null;
+  decompressTarget: THREE.Vector3 | null;
+  decompressArrivedAt: number;
+  decompressUntil: number;
+  decompressEstName: string;
   radius: number;
   speed: number;
   phase: number;
@@ -1442,6 +2223,10 @@ function makeAgent(name: string, role: string, color: number, center: THREE.Vect
     desk: new THREE.Vector3(center.x, 0, center.z - 0.65),
     state: "wandering",
     target: null,
+    decompressTarget: null,
+    decompressArrivedAt: 0,
+    decompressUntil: 0,
+    decompressEstName: "",
     radius: 1.5 + Math.random() * 1.2,
     speed: 0.4 + Math.random() * 0.3,
     phase: Math.random() * Math.PI * 2,
@@ -1515,7 +2300,7 @@ spawnAgent("ECHO", "Tester", 0xffdd44, new THREE.Vector3(0, 0, 2));
 const style = document.createElement("style");
 style.textContent = `
   .ui-panel { position: fixed; background: rgba(10,12,20,0.85); color: #fff; font-family: ui-monospace, monospace; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; backdrop-filter: blur(4px); }
-  #infoPanel { top: 14px; left: 14px; padding: 12px 16px; min-width: 200px; display: none; }
+  #infoPanel { top: 14px; left: 14px; padding: 12px 16px; min-width: 200px; max-width: 240px; display: none; }
   #infoPanel h3 { margin: 0 0 4px 0; font-size: 16px; letter-spacing: 1px; }
   #infoPanel .role { color: #88aaff; font-size: 12px; margin-bottom: 8px; }
   #infoPanel .status { color: #66dd99; font-size: 12px; }
@@ -1561,6 +2346,31 @@ document.body.appendChild(chatBox);
 
 const chatInput = document.getElementById("chatInput") as HTMLInputElement;
 const chatSend = document.getElementById("chatSend") as HTMLButtonElement;
+
+// ---- Keep all UI panels inside the visual viewport (handles pinch zoom) ----
+function syncPanelsToVisualViewport() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const ox = Math.round(vv.offsetLeft);
+  const oy = Math.round(vv.offsetTop);
+  const rightInset = Math.round(window.innerWidth - vv.width - ox);
+  const bottomInset = Math.round(window.innerHeight - vv.height - oy);
+  const cx = Math.round(ox + vv.width / 2);
+
+  const ip = document.getElementById("infoPanel");
+  if (ip) { ip.style.left = (14 + ox) + "px"; ip.style.top = (14 + oy) + "px"; }
+  const help = document.getElementById("help");
+  if (help) { help.style.right = (14 + rightInset) + "px"; help.style.top = (14 + oy) + "px"; }
+  const chatBox = document.getElementById("chatBox");
+  if (chatBox) { chatBox.style.left = cx + "px"; chatBox.style.bottom = (14 + bottomInset) + "px"; }
+  const chatLog = document.getElementById("chatLog");
+  if (chatLog) { chatLog.style.left = cx + "px"; chatLog.style.bottom = (80 + bottomInset) + "px"; }
+  const mailPanel = document.getElementById("mailPanel");
+  if (mailPanel) { mailPanel.style.left = (14 + ox) + "px"; mailPanel.style.top = (60 + oy) + "px"; }
+}
+window.visualViewport?.addEventListener("scroll", syncPanelsToVisualViewport);
+window.visualViewport?.addEventListener("resize", syncPanelsToVisualViewport);
+syncPanelsToVisualViewport();
 
 let selected: Agent | null = null;
 let selectedPet: Pet | null = null;
@@ -1674,18 +2484,32 @@ function selectAgent(a: Agent | null) {
     return;
   }
   infoPanel.style.display = "block";
-  const stateLabel = a.state === "working" ? "● working" : driveMode ? "● driving" : "● idle";
-  const releaseBtn = a.state === "working"
-    ? `<button id="releaseBtn" style="margin-top:8px;background:#553344;color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:4px 10px;font-family:inherit;font-size:11px;cursor:pointer">force release</button>`
+  const stateLabel = a.state === "working"
+    ? "● working"
+    : a.state === "decompressing"
+      ? `● off duty${a.decompressEstName ? " · " + a.decompressEstName.split(" ")[0] : ""}`
+      : driveMode ? "● driving" : "● idle";
+  const btnBase = "color:#fff;border-radius:4px;padding:6px 10px;font-family:inherit;font-size:11px;cursor:pointer;border:1px solid rgba(255,255,255,0.2);width:100%;text-align:left";
+  const rowStyle = "margin-top:10px;display:flex;flex-direction:column;gap:6px";
+  const driveDisabled = a.state === "working" || a.state === "decompressing";
+  const releaseRow = a.state === "working"
+    ? `<div style="${rowStyle}"><button id="releaseBtn" style="${btnBase};background:#553344">⛔ force release</button></div>`
     : "";
-  const driveBtn = a.state === "working"
-    ? ""
-    : `<button id="driveBtn" style="margin-top:8px;background:${driveMode ? "#553a14" : "#2a3344"};color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:4px 10px;font-family:inherit;font-size:11px;cursor:pointer;margin-left:6px">${driveMode ? "stop driving" : "drive (M)"}</button>`;
-  infoPanel.innerHTML = `<h3 style="color:#${a.color.toString(16).padStart(6, "0")}">${a.name}</h3><div class="role">${a.role}</div><div class="status">${stateLabel}</div>${releaseBtn}${driveBtn}`;
+  const driveRow = `<div style="${rowStyle}"><button id="driveBtn" ${driveDisabled ? "disabled" : ""} style="${btnBase};background:${driveMode ? "#553a14" : "#2a3a55"};font-weight:bold;${driveDisabled ? "opacity:0.4;cursor:not-allowed" : ""}">${driveMode ? "● stop driving" : "▶ drive (M)"}</button></div>`;
+  const nightlifeRow = (a.state === "wandering")
+    ? `<div style="margin-top:12px;font-size:10px;color:#88a;letter-spacing:1px">SEND TO ↓</div><div style="${rowStyle}"><button id="goLoungeBtn" style="${btnBase};background:#3a1828;color:#ffacd0;border-color:#ff5fa8">🥃 MIDNIGHT LOUNGE</button><button id="goPulseBtn" style="${btnBase};background:#102030;color:#9fd9f0;border-color:#88e6ff">♪ PULSE</button><button id="goVelvetBtn" style="${btnBase};background:#3a0814;color:#ff8fb8;border-color:#ff2d8a">💋 VELVET</button></div>`
+    : "";
+  infoPanel.innerHTML = `<h3 style="color:#${a.color.toString(16).padStart(6, "0")}">${a.name}</h3><div class="role">${a.role}</div><div class="status">${stateLabel}</div>${releaseRow}${driveRow}${nightlifeRow}`;
   const rb = document.getElementById("releaseBtn");
   if (rb) rb.addEventListener("click", () => { releaseAgent(a, true); selectAgent(a); });
   const db = document.getElementById("driveBtn");
   if (db) db.addEventListener("click", () => setDriveMode(!driveMode));
+  const lb = document.getElementById("goLoungeBtn");
+  if (lb) lb.addEventListener("click", () => sendAgentToEstablishment(a, establishments.LOUNGE));
+  const pb = document.getElementById("goPulseBtn");
+  if (pb) pb.addEventListener("click", () => sendAgentToEstablishment(a, establishments.PULSE));
+  const vb = document.getElementById("goVelvetBtn");
+  if (vb) vb.addEventListener("click", () => sendAgentToEstablishment(a, establishments.VELVET));
   chatInput.disabled = false;
   chatSend.disabled = false;
   chatInput.placeholder = driveMode ? `(driving ${a.name})` : `talk to ${a.name}…`;
@@ -1849,6 +2673,17 @@ function handleBridgeEvent(event: { type: string; payload: Record<string, unknow
       for (const m of allMail) m.read = true;
       refreshFlag();
       refreshMailPanel();
+      break;
+    }
+    case "experience:result": {
+      const { requestId, text } = event.payload as { requestId: string; text: string };
+      const pending = experiencePending.get(requestId);
+      if (!pending) break;
+      experiencePending.delete(requestId);
+      const cleaned = text.replace(/^["'`]+|["'`]+$/g, "").trim();
+      const short = cleaned.length > 16 ? cleaned.slice(0, 14) + "…" : cleaned;
+      pending.agent.bubble?.say(short, 5000);
+      appendMessage(pending.agent.name, `(back from ${pending.estName}) ${cleaned}`, true, pending.agent.color);
       break;
     }
     case "session:start": {
@@ -2196,6 +3031,10 @@ function animate() {
   const dt = Math.min(0.1, (nowMs - lastFrameMs) / 1000);
   lastFrameMs = nowMs;
   updateCars(dt);
+  updatePedestrians(dt, t);
+  updateFlickerWindows(nowMs);
+  updateClubLights(t);
+  updateLurers(t);
   for (const p of pets) updatePet(p, t);
   scanSocialInteractions(nowMs);
   for (const a of agents) a.bubble?.update(nowMs);
@@ -2224,6 +3063,68 @@ function animate() {
       a.rightLeg.rotation.x = -swing;
       a.leftArm.rotation.x = -swing * 0.7;
       a.rightArm.rotation.x = swing * 0.7;
+    } else if (a.state === "decompressing") {
+      const target = a.decompressTarget;
+      if (!target) {
+        a.state = "wandering";
+      } else if (a.decompressArrivedAt === 0) {
+        const dx = target.x - a.group.position.x;
+        const dz = target.z - a.group.position.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist < 0.7) {
+          a.decompressArrivedAt = nowMs;
+          a.decompressUntil = nowMs + 12000 + Math.random() * 9000;
+          a.bubble?.say(pickRand(["🍻", "♪ this beat", "*relax*", "much needed", "off-duty"]), 3000);
+          setStatus(a, "off duty", "done");
+          a.leftLeg.rotation.x = 0;
+          a.rightLeg.rotation.x = 0;
+          a.leftArm.rotation.x = 0;
+          a.rightArm.rotation.x = 0;
+        } else {
+          const speed = 0.075;
+          a.group.position.x += (dx / dist) * speed;
+          a.group.position.z += (dz / dist) * speed;
+          a.group.rotation.y = Math.atan2(dx, dz);
+          const swing = Math.sin(t * 8) * 0.7;
+          a.leftLeg.rotation.x = swing;
+          a.rightLeg.rotation.x = -swing;
+          a.leftArm.rotation.x = -swing * 0.8;
+          a.rightArm.rotation.x = swing * 0.8;
+        }
+      } else if (nowMs < a.decompressUntil) {
+        // Standing & chilling, occasional vibe bubble
+        if (Math.random() < 0.0035) {
+          a.bubble?.say(pickRand(["🍻", "🎵", "*sips*", "this is nice", "ahhh", "♪♪"]), 2500);
+        }
+      } else {
+        // Time to head home
+        const homeX = a.center.x;
+        const homeZ = a.center.z;
+        const hdx = homeX - a.group.position.x;
+        const hdz = homeZ - a.group.position.z;
+        const hdist = Math.hypot(hdx, hdz);
+        if (hdist < 0.7) {
+          const visited = a.decompressEstName;
+          a.state = "wandering";
+          a.decompressTarget = null;
+          a.decompressArrivedAt = 0;
+          a.decompressUntil = 0;
+          a.decompressEstName = "";
+          setStatus(a, null);
+          // Post-visit report — generated by a real LLM call
+          if (visited) requestExperienceReport(a, visited);
+        } else {
+          const speed = 0.07;
+          a.group.position.x += (hdx / hdist) * speed;
+          a.group.position.z += (hdz / hdist) * speed;
+          a.group.rotation.y = Math.atan2(hdx, hdz);
+          const swing = Math.sin(t * 7) * 0.6;
+          a.leftLeg.rotation.x = swing;
+          a.rightLeg.rotation.x = -swing;
+          a.leftArm.rotation.x = -swing * 0.7;
+          a.rightArm.rotation.x = swing * 0.7;
+        }
+      }
     } else if (a.state === "moving" && a.target) {
       const dx = a.target.x - a.group.position.x;
       const dz = a.target.z - a.group.position.z;
