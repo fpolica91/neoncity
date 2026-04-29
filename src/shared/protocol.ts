@@ -51,6 +51,21 @@ export interface AgentModel {
   assignedTaskId?: string;
 }
 
+export type PinColor = "yellow" | "pink" | "cyan" | "green";
+export interface PinModel {
+  id: string;
+  text: string;
+  color: PinColor;
+  createdAt: number;
+}
+
+export interface MailModel {
+  id: string;
+  text: string;
+  createdAt: number;
+  read: boolean;
+}
+
 // --- District themes ---
 
 export type DistrictTheme =
@@ -115,6 +130,10 @@ export type BridgeEvent =
   | { type: "task:completed"; payload: { taskId: string; subject: string; projectId: string } }
   | { type: "task:failed"; payload: { taskId: string; subject: string; projectId: string } }
   | { type: "project:discovered"; payload: ProjectModel }
+  | { type: "pin:added"; payload: PinModel }
+  | { type: "pin:removed"; payload: { id: string } }
+  | { type: "mail:added"; payload: MailModel }
+  | { type: "mail:read_all"; payload: Record<string, never> }
   | { type: "state:full_sync"; payload: FullSyncPayload };
 
 export interface FullSyncPayload {
@@ -122,6 +141,8 @@ export interface FullSyncPayload {
   sessions: SessionModel[];
   tasks: TaskModel[];
   agents: AgentModel[];
+  pins: PinModel[];
+  mail: MailModel[];
 }
 
 // --- Client -> Bridge commands ---
@@ -130,6 +151,10 @@ export type ClientCommand =
   | { type: "prompt:send"; payload: { sessionId?: string; projectPath: string; prompt: string } }
   | { type: "session:create"; payload: { projectPath: string; prompt: string } }
   | { type: "session:cancel"; payload: { sessionId: string } }
+  | { type: "pin:add"; payload: { text: string; color?: PinColor } }
+  | { type: "pin:remove"; payload: { id: string } }
+  | { type: "mail:send"; payload: { text: string } }
+  | { type: "mail:read_all"; payload: Record<string, never> }
   | { type: "subscribe" };
 
 // --- Hook event from Claude Code ---

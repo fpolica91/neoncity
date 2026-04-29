@@ -422,6 +422,8 @@ export class SessionStore {
       sessions: allSessions,
       tasks: allTasks,
       agents: allAgents,
+      pins: [], // populated by index.ts before broadcasting
+      mail: [], // populated by index.ts before broadcasting
     };
   }
 
